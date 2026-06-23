@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LandmarkTap — Geography Guessing Game</title>
+<meta name="description" content="Guess where famous monuments, bridges, and statues are on a 3D globe!" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #f5f4f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1a1a; }
+
+  #app { max-width: 680px; margin: 0 auto; background: #fff; min-height: 100vh; display: flex; flex-direction: column; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.08); }
+
+  /* HUD */
+  #hud { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.08); }
+  #game-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: #1a1a1a; }
+  #hud-right { display: flex; gap: 14px; align-items: center; }
+  .hud-chip { font-size: 13px; color: #666; }
+  .hud-chip b { font-weight: 600; color: #1a1a1a; }
+  #streak-badge { display: none; align-items: center; gap: 4px; font-size: 13px; color: #666; background: #fef9ec; border: 0.5px solid #f5d87a; border-radius: 20px; padding: 2px 10px; }
+  #streak-badge b { color: #a0740a; font-weight: 600; }
+  #streak-badge.show { display: flex; }
+  #progress-dots { display: flex; gap: 5px; align-items: center; }
+  .pdot { width: 7px; height: 7px; border-radius: 50%; background: #ddd; transition: background 0.2s; }
+  .pdot.done { background: #999; }
+  .pdot.active { background: #1a1a1a; }
+
+  /* Difficulty */
+  #diff-bar { display: flex; gap: 8px; padding: 10px 16px 6px; }
+  .diff-btn { flex: 1; padding: 6px 4px; border-radius: 8px; border: 0.5px solid rgba(0,0,0,0.15); background: #fff; font-size: 12px; font-weight: 500; color: #666; cursor: pointer; text-align: center; transition: all 0.15s; }
+  .diff-btn.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .diff-btn:not(.active):hover { background: #f5f4f0; }
+
+  /* Landmark card */
+  #lm-card { margin: 0 16px 8px; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 12px; overflow: hidden; background: #fff; display: flex; min-height: 96px; }
+  #lm-photo-wrap { width: 110px; min-height: 96px; flex-shrink: 0; position: relative; background: #f0eeea; }
+  #lm-photo { width: 110px; height: 100%; object-fit: cover; display: none; position: absolute; inset: 0; }
+  #lm-emoji-ph { width: 110px; min-height: 96px; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+  #lm-info { padding: 12px 14px; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+  #lm-num { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #aaa; }
+  #lm-name { font-size: 18px; font-weight: 600; color: #1a1a1a; line-height: 1.2; }
+  #lm-hint { font-size: 12px; color: #888; }
+  #lm-revealed { font-size: 11px; color: #aaa; margin-top: 2px; display: none; }
+
+  /* Globe */
+  #globe-container { position: relative; width: 100%; flex: 1; min-height: 340px; cursor: crosshair; overflow: hidden; background: #e8eef5; }
+  #globe-canvas { width: 100%; height: 100%; display: block; }
+  #click-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #555; background: rgba(255,255,255,0.92); border: 0.5px solid rgba(0,0,0,0.12); border-radius: 20px; padding: 5px 16px; pointer-events: none; white-space: nowrap; backdrop-filter: blur(4px); }
+
+  /* Result bar */
+  #result-bar { margin: 8px 16px 0; background: #f5f4f0; border-radius: 8px; padding: 10px 14px; display: none; align-items: center; gap: 12px; }
+  #result-bar.show { display: flex; }
+  #result-dist { font-size: 20px; font-weight: 600; }
+  #result-label { font-size: 12px; color: #888; }
+  #result-pts { margin-left: auto; font-size: 15px; font-weight: 600; }
+  .c-good { color: #2d6a0a !important; }
+  .c-ok   { color: #8a4f00 !important; }
+  .c-bad  { color: #a32020 !important; }
+
+  #next-btn { margin: 8px 16px 14px; padding: 10px; border-radius: 8px; border: 0.5px solid rgba(0,0,0,0.15); background: #fff; font-size: 14px; font-weight: 500; color: #1a1a1a; cursor: pointer; display: none; width: calc(100% - 32px); transition: background 0.15s; }
+  #next-btn:hover { background: #f5f4f0; }
+  #next-btn.show { display: block; }
+
+  /* Final screen */
+  #final-screen { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 40px 24px; text-align: center; }
+  #final-screen.show { display: flex; }
+  #final-title { font-size: 22px; font-weight: 600; }
+  #final-score-big { font-size: 56px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+  #final-grade { font-size: 14px; color: #666; }
+  #streak-display { font-size: 13px; color: #666; background: #f5f4f0; border-radius: 8px; padding: 10px 22px; line-height: 1.8; }
+  #streak-display b { color: #1a1a1a; font-weight: 600; }
+  #share-btn { padding: 9px 22px; border-radius: 8px; border: 0.5px solid rgba(0,0,0,0.15); background: #fff; font-size: 13px; font-weight: 500; color: #1a1a1a; cursor: pointer; }
+  #share-btn:hover { background: #f5f4f0; }
+  #play-again { padding: 10px 28px; border-radius: 8px; border: none; background: #1a1a1a; font-size: 14px; font-weight: 500; color: #fff; cursor: pointer; }
+  #play-again:hover { background: #333; }
+
+  /* Legend */
+  #legend { display: none; align-items: center; gap: 16px; padding: 4px 16px 8px; font-size: 11px; color: #999; }
+  #legend.show { display: flex; }
+  .leg-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+
+  @media (max-width: 480px) {
+    #lm-name { font-size: 15px; }
+    #lm-photo-wrap, #lm-emoji-ph { width: 88px; }
+    #lm-photo { width: 88px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="hud">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div id="game-title">🌍 LandmarkTap</div>
+      <div id="streak-badge">🔥 <b id="streak-num">0</b>&nbsp;day streak</div>
+    </div>
+    <div id="hud-right">
+      <div id="progress-dots"></div>
+      <div class="hud-chip">Score: <b id="total-score">0</b></div>
+    </div>
+  </div>
+
+  <div id="diff-bar">
+    <button class="diff-btn active" data-diff="easy">🟢 Easy</button>
+    <button class="diff-btn" data-diff="medium">🟡 Medium</button>
+    <button class="diff-btn" data-diff="hard">🔴 Hard</button>
+  </div>
+
+  <div id="lm-card">
+    <div id="lm-photo-wrap">
+      <div id="lm-emoji-ph"><span id="lm-emoji">🗺️</span></div>
+      <img id="lm-photo" alt="Landmark photo" />
+    </div>
+    <div id="lm-info">
+      <div id="lm-num">Landmark 1 of 5</div>
+      <div id="lm-name">Loading…</div>
+      <div id="lm-hint"></div>
+      <div id="lm-revealed"></div>
+    </div>
+  </div>
+
+  <div id="globe-container">
+    <canvas id="globe-canvas"></canvas>
+    <div id="click-hint">tap the globe to place your guess</div>
+  </div>
+
+  <div id="legend">
+    <span><span class="leg-dot" style="background:#3B7DD8"></span>Your guess</span>
+    <span><span class="leg-dot" style="background:#C0392B"></span>Actual location</span>
+  </div>
+
+  <div id="result-bar">
+    <div>
+      <div id="result-dist">—</div>
+      <div id="result-label">km from target</div>
+    </div>
+    <div id="result-pts">+0 pts</div>
+  </div>
+  <button id="next-btn">Next landmark →</button>
+
+  <div id="final-screen">
+    <div id="final-title">Round complete!</div>
+    <div id="final-score-big">0</div>
+    <div id="final-grade"></div>
+    <div id="streak-display">
+      Today's streak: <b id="final-streak">0</b> days &nbsp;·&nbsp; Best ever: <b id="best-streak">0</b> days
+    </div>
+    <button id="share-btn">📋 Copy score to share</button>
+    <button id="play-again">Play again</button>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const LANDMARKS = {
+  easy: [
+    { name:"Eiffel Tower", hint:"Paris, France", emoji:"🗼", lat:48.8584, lon:2.2945, wiki:"Eiffel_Tower" },
+    { name:"Statue of Liberty", hint:"New York, USA", emoji:"🗽", lat:40.6892, lon:-74.0445, wiki:"Statue_of_Liberty" },
+    { name:"Sydney Opera House", hint:"Sydney, Australia", emoji:"🎭", lat:-33.8568, lon:151.2153, wiki:"Sydney_Opera_House" },
+    { name:"Colosseum", hint:"Rome, Italy", emoji:"🏛️", lat:41.8902, lon:12.4922, wiki:"Colosseum" },
+    { name:"Great Wall of China", hint:"Northern China", emoji:"🧱", lat:40.4319, lon:116.5704, wiki:"Great_Wall_of_China" },
+    { name:"Taj Mahal", hint:"Agra, India", emoji:"🕌", lat:27.1751, lon:78.0421, wiki:"Taj_Mahal" },
+    { name:"Big Ben", hint:"London, UK", emoji:"🕰️", lat:51.5007, lon:-0.1246, wiki:"Big_Ben" },
+    { name:"Golden Gate Bridge", hint:"San Francisco, USA", emoji:"🌉", lat:37.8199, lon:-122.4783, wiki:"Golden_Gate_Bridge" },
+    { name:"Christ the Redeemer", hint:"Rio de Janeiro, Brazil", emoji:"✝️", lat:-22.9519, lon:-43.2105, wiki:"Christ_the_Redeemer_(statue)" },
+    { name:"Burj Khalifa", hint:"Dubai, UAE", emoji:"🏙️", lat:25.1972, lon:55.2744, wiki:"Burj_Khalifa" },
+    { name:"Stonehenge", hint:"Wiltshire, England", emoji:"🪨", lat:51.1789, lon:-1.8262, wiki:"Stonehenge" },
+    { name:"Machu Picchu", hint:"Cusco Region, Peru", emoji:"⛰️", lat:-13.1631, lon:-72.5450, wiki:"Machu_Picchu" },
+  ],
+  medium: [
+    { name:"Sagrada Família", hint:"Barcelona, Spain", emoji:"⛪", lat:41.4036, lon:2.1744, wiki:"Sagrada_Família" },
+    { name:"Angkor Wat", hint:"Siem Reap, Cambodia", emoji:"🛕", lat:13.4125, lon:103.8670, wiki:"Angkor_Wat" },
+    { name:"Petra", hint:"Ma'an, Jordan", emoji:"🏜️", lat:30.3285, lon:35.4444, wiki:"Petra" },
+    { name:"Hagia Sophia", hint:"Istanbul, Turkey", emoji:"🕌", lat:41.0086, lon:28.9802, wiki:"Hagia_Sophia" },
+    { name:"Sydney Harbour Bridge", hint:"Sydney, Australia", emoji:"🌁", lat:-33.8523, lon:151.2108, wiki:"Sydney_Harbour_Bridge" },
+    { name:"Acropolis of Athens", hint:"Athens, Greece", emoji:"🏛️", lat:37.9715, lon:23.7267, wiki:"Acropolis_of_Athens" },
+    { name:"Table Mountain", hint:"Cape Town, South Africa", emoji:"🏔️", lat:-33.9628, lon:18.4098, wiki:"Table_Mountain" },
+    { name:"Mount Fuji", hint:"Honshu, Japan", emoji:"🗻", lat:35.3606, lon:138.7274, wiki:"Mount_Fuji" },
+    { name:"Niagara Falls", hint:"Canada/USA border", emoji:"💧", lat:43.0799, lon:-79.0747, wiki:"Niagara_Falls" },
+    { name:"Alhambra", hint:"Granada, Spain", emoji:"🏰", lat:37.1760, lon:-3.5881, wiki:"Alhambra" },
+    { name:"Chichen Itza", hint:"Yucatán, Mexico", emoji:"🔺", lat:20.6843, lon:-88.5678, wiki:"Chichen_Itza" },
+    { name:"Victoria Harbour", hint:"Hong Kong", emoji:"⚓", lat:22.2855, lon:114.1577, wiki:"Victoria_Harbour" },
+  ],
+  hard: [
+    { name:"Moai Statues", hint:"Easter Island, Chile", emoji:"🗿", lat:-27.1127, lon:-109.3497, wiki:"Moai" },
+    { name:"Svalbard Global Seed Vault", hint:"Norway (very far north)", emoji:"🌱", lat:78.2367, lon:15.4913, wiki:"Svalbard_Global_Seed_Vault" },
+    { name:"Sigiriya Rock Fortress", hint:"Central Province, Sri Lanka", emoji:"🦁", lat:7.9570, lon:80.7603, wiki:"Sigiriya" },
+    { name:"Pamukkale Terraces", hint:"Denizli Province, Turkey", emoji:"🏔️", lat:37.9201, lon:29.1197, wiki:"Pamukkale" },
+    { name:"Meteora Monasteries", hint:"Thessaly, Greece", emoji:"⛰️", lat:39.7217, lon:21.6306, wiki:"Meteora" },
+    { name:"Göbekli Tepe", hint:"Şanlıurfa Province, Turkey", emoji:"🪨", lat:37.2232, lon:38.9224, wiki:"Göbekli_Tepe" },
+    { name:"Bagan Temples", hint:"Mandalay Region, Myanmar", emoji:"🛕", lat:21.1717, lon:94.8585, wiki:"Bagan" },
+    { name:"Preikestolen Cliff", hint:"Rogaland, Norway", emoji:"🏔️", lat:58.9863, lon:6.1886, wiki:"Preikestolen" },
+    { name:"Shibam Mud Skyscrapers", hint:"Hadhramaut, Yemen", emoji:"🏙️", lat:15.9267, lon:48.6267, wiki:"Shibam" },
+    { name:"Longmen Grottoes", hint:"Luoyang, China", emoji:"🗿", lat:34.5534, lon:112.4735, wiki:"Longmen_Grottoes" },
+    { name:"Derinkuyu Underground City", hint:"Cappadocia, Turkey", emoji:"🕳️", lat:38.3733, lon:34.7363, wiki:"Derinkuyu_underground_city" },
+    { name:"Khajuraho Temples", hint:"Madhya Pradesh, India", emoji:"🛕", lat:24.8318, lon:79.9199, wiki:"Khajuraho_Group_of_Monuments" },
+  ]
+};
+
+// --- State ---
+let difficulty = 'easy';
+let scene, camera, renderer, globe;
+let isDragging = false, prevMouse = {x:0,y:0}, mouseDidMove = false;
+let rotX = 0, rotY = 0.3, velX = 0, velY = 0;
+let guessMarker = null, answerMarker = null, arcLine = null;
+let currentLandmarks = [], currentIdx = 0, totalScore = 0, roundDone = false, guessPlaced = false;
+let roundResults = [];
+
+// --- Streak (localStorage) ---
+function getStreak() {
+  try { return JSON.parse(localStorage.getItem('lt_streak') || '{"count":0,"best":0,"lastDate":""}'); }
+  catch(e) { return {count:0,best:0,lastDate:""}; }
+}
+function saveStreak(s) { try { localStorage.setItem('lt_streak', JSON.stringify(s)); } catch(e) {} }
+function recordRound(score) {
+  const s = getStreak();
+  const today = new Date().toISOString().slice(0,10);
+  if (s.lastDate === today) return s;
+  if (score > 5000) {
+    const yesterday = new Date(Date.now()-86400000).toISOString().slice(0,10);
+    s.count = (s.lastDate === yesterday) ? s.count + 1 : 1;
+    s.best = Math.max(s.best, s.count);
+    s.lastDate = today;
+    saveStreak(s);
+  }
+  return s;
+}
+function updateStreakBadge() {
+  const s = getStreak();
+  if (s.count > 0) {
+    document.getElementById('streak-num').textContent = s.count;
+    document.getElementById('streak-badge').classList.add('show');
+  }
+}
+
+// --- Utils ---
+function shuffle(arr) {
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+function haversine(a,b,c,d) {
+  const R=6371,dL=(c-a)*Math.PI/180,dO=(d-b)*Math.PI/180;
+  const x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dO/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+function scoreFromDist(d) {
+  if(d<100) return 5000;
+  if(d<500) return Math.round(5000-d*4);
+  if(d<2000) return Math.round(3000-(d-500)*1.3);
+  if(d<5000) return Math.round(1050-(d-2000)*0.3);
+  return Math.max(0,Math.round(150-(d-5000)*0.02));
+}
+
+// --- Wikipedia photo ---
+async function fetchWikiPhoto(title) {
+  const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=pageimages&pithumbsize=320&format=json&origin=*`;
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    const pages = d.query.pages;
+    const page = pages[Object.keys(pages)[0]];
+    return page?.thumbnail?.source || null;
+  } catch(e) { return null; }
+}
+
+// --- Round logic ---
+function startRound() {
+  currentLandmarks = shuffle(LANDMARKS[difficulty]).slice(0,5);
+  currentIdx = 0; totalScore = 0; roundDone = false; roundResults = [];
+  document.getElementById('total-score').textContent = '0';
+  document.getElementById('final-screen').classList.remove('show');
+  document.getElementById('result-bar').classList.remove('show');
+  document.getElementById('next-btn').classList.remove('show');
+  document.getElementById('lm-card').style.display = '';
+  document.getElementById('diff-bar').style.display = '';
+  document.getElementById('legend').classList.remove('show');
+  buildDots();
+  showLandmark();
+}
+
+function buildDots() {
+  const c = document.getElementById('progress-dots'); c.innerHTML = '';
+  for(let i=0;i<5;i++){const d=document.createElement('div');d.className='pdot'+(i===0?' active':'');d.id='dot-'+i;c.appendChild(d);}
+}
+
+async function showLandmark() {
+  const lm = currentLandmarks[currentIdx];
+  document.getElementById('lm-num').textContent = `Landmark ${currentIdx+1} of 5`;
+  document.getElementById('lm-name').textContent = lm.name;
+  document.getElementById('lm-hint').textContent = difficulty === 'hard' ? '??? — tap the globe to guess' : lm.hint;
+  document.getElementById('lm-emoji').textContent = lm.emoji;
+  document.getElementById('lm-revealed').style.display = 'none';
+  document.getElementById('result-bar').classList.remove('show');
+  document.getElementById('next-btn').classList.remove('show');
+  document.getElementById('click-hint').style.display = 'block';
+  document.getElementById('legend').classList.remove('show');
+  guessPlaced = false;
+  clearMarkers();
+
+  const img = document.getElementById('lm-photo');
+  const ph = document.getElementById('lm-emoji-ph');
+  img.style.display = 'none'; ph.style.display = 'flex';
+
+  fetchWikiPhoto(lm.wiki).then(src => {
+    if (src) {
+      img.onload = () => { ph.style.display='none'; img.style.display='block'; };
+      img.src = src;
+    }
+  });
+}
+
+// --- Globe ---
+function latLonToVec(lat,lon,r) {
+  const phi=(90-lat)*Math.PI/180, theta=(lon+180)*Math.PI/180;
+  return new THREE.Vector3(-r*Math.sin(phi)*Math.cos(theta), r*Math.cos(phi), r*Math.sin(phi)*Math.sin(theta));
+}
+function vecToLatLon(v) {
+  const r=v.length(), phi=Math.acos(v.y/r), theta=Math.atan2(v.z,-v.x);
+  return { lat:90-phi*180/Math.PI, lon:theta*180/Math.PI-180 };
+}
+function makeSphereMarker(lat,lon,color,size=0.026) {
+  const m=new THREE.Mesh(new THREE.SphereGeometry(size,12,12),new THREE.MeshBasicMaterial({color}));
+  m.position.copy(latLonToVec(lat,lon,1.012)); scene.add(m); return m;
+}
+function makeArc(la1,lo1,la2,lo2) {
+  const pts=[];
+  for(let t=0;t<=60;t++){
+    const f=t/60;
+    const v=new THREE.Vector3().lerpVectors(latLonToVec(la1,lo1,1.01),latLonToVec(la2,lo2,1.01),f).normalize().multiplyScalar(1.04+Math.sin(f*Math.PI)*0.14);
+    pts.push(v);
+  }
+  const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x777777,opacity:0.55,transparent:true}));
+  scene.add(l); return l;
+}
+function clearMarkers() {
+  if(guessMarker){scene.remove(guessMarker);guessMarker=null;}
+  if(answerMarker){scene.remove(answerMarker);answerMarker=null;}
+  if(arcLine){scene.remove(arcLine);arcLine=null;}
+}
+
+function initGlobe() {
+  const canvas = document.getElementById('globe-canvas');
+  const container = document.getElementById('globe-container');
+  renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(45, container.clientWidth/container.clientHeight, 0.1, 100);
+  camera.position.z = 2.6;
+  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+  dirLight.position.set(5, 3, 5); scene.add(dirLight);
+  const tex = new THREE.TextureLoader().load('https://unpkg.com/three-globe@2.30.0/example/img/earth-day.jpg');
+  globe = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 64, 64),
+    new THREE.MeshPhongMaterial({map:tex, specular:new THREE.Color(0x111111), shininess:10})
+  );
+  scene.add(globe);
+  resize();
+  window.addEventListener('resize', resize);
+  animate();
+}
+
+function resize() {
+  const c = document.getElementById('globe-container');
+  renderer.setSize(c.clientWidth, c.clientHeight);
+  camera.aspect = c.clientWidth/c.clientHeight;
+  camera.updateProjectionMatrix();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  if(!isDragging){ velX*=0.94; velY*=0.94; rotX+=velY; rotY+=velX; }
+  globe.rotation.x = rotX; globe.rotation.y = rotY;
+  [guessMarker, answerMarker, arcLine].forEach(m => { if(m) m.rotation.copy(globe.rotation); });
+  renderer.render(scene, camera);
+}
+
+function getGlobeClick(e) {
+  const canvas = document.getElementById('globe-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX !== undefined ? e.clientX : e.touches?.[0]?.clientX;
+  const cy = e.clientY !== undefined ? e.clientY : e.touches?.[0]?.clientY;
+  const x = ((cx-rect.left)/rect.width)*2-1;
+  const y = -((cy-rect.top)/rect.height)*2+1;
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera({x,y}, camera);
+  const hits = ray.intersectObject(globe);
+  if(!hits.length) return null;
+  return vecToLatLon(globe.worldToLocal(hits[0].point.clone()));
+}
+
+function handleGuess(e) {
+  const ll = getGlobeClick(e); if(!ll) return;
+  guessPlaced = true;
+  document.getElementById('click-hint').style.display = 'none';
+  document.getElementById('legend').classList.add('show');
+
+  const lm = currentLandmarks[currentIdx];
+  const dist = Math.round(haversine(ll.lat, ll.lon, lm.lat, lm.lon));
+  const pts = scoreFromDist(dist);
+  totalScore += pts;
+  roundResults.push({name:lm.name, dist, pts});
+
+  clearMarkers();
+  guessMarker = makeSphereMarker(ll.lat, ll.lon, 0x3B7DD8);
+  answerMarker = makeSphereMarker(lm.lat, lm.lon, 0xC0392B);
+  arcLine = makeArc(ll.lat, ll.lon, lm.lat, lm.lon);
+  [guessMarker, answerMarker, arcLine].forEach(m => m.rotation.copy(globe.rotation));
+
+  if(difficulty === 'hard') {
+    document.getElementById('lm-hint').textContent = lm.hint;
+    const rv = document.getElementById('lm-revealed');
+    rv.textContent = '📍 ' + lm.hint; rv.style.display = 'block';
+  }
+
+  const cls = dist<200?'c-good':dist<1500?'c-ok':'c-bad';
+  const rb = document.getElementById('result-bar'); rb.classList.add('show');
+  const rd = document.getElementById('result-dist');
+  rd.textContent = dist < 10 ? 'Spot on!' : dist.toLocaleString() + ' km';
+  rd.className = cls;
+  document.getElementById('result-pts').textContent = '+' + pts.toLocaleString() + ' pts';
+  document.getElementById('result-pts').className = cls;
+  document.getElementById('total-score').textContent = totalScore.toLocaleString();
+  document.getElementById('dot-'+currentIdx).className = 'pdot done';
+
+  const nb = document.getElementById('next-btn');
+  nb.textContent = currentIdx < 4 ? 'Next landmark →' : 'See final score →';
+  nb.classList.add('show');
+  if(currentIdx >= 4) roundDone = true;
+}
+
+// --- Event listeners ---
+const gc = document.getElementById('globe-container');
+gc.addEventListener('mousedown', e => { isDragging=true; mouseDidMove=false; prevMouse={x:e.clientX,y:e.clientY}; velX=0; velY=0; });
+gc.addEventListener('touchstart', e => { isDragging=true; mouseDidMove=false; prevMouse={x:e.touches[0].clientX,y:e.touches[0].clientY}; velX=0; velY=0; }, {passive:true});
+document.addEventListener('mousemove', e => { if(!isDragging) return; mouseDidMove=true; const dx=e.clientX-prevMouse.x,dy=e.clientY-prevMouse.y; velX=dx*0.005; velY=dy*0.005; rotY+=velX; rotX+=velY; prevMouse={x:e.clientX,y:e.clientY}; });
+document.addEventListener('touchmove', e => { if(!isDragging) return; mouseDidMove=true; const dx=e.touches[0].clientX-prevMouse.x,dy=e.touches[0].clientY-prevMouse.y; velX=dx*0.005; velY=dy*0.005; rotY+=velX; rotX+=velY; prevMouse={x:e.touches[0].clientX,y:e.touches[0].clientY}; }, {passive:true});
+document.addEventListener('mouseup', e => { if(isDragging && !mouseDidMove && !guessPlaced && !roundDone) handleGuess(e); isDragging=false; });
+gc.addEventListener('touchend', e => { if(!guessPlaced && !roundDone && !mouseDidMove) handleGuess({clientX:e.changedTouches[0].clientX,clientY:e.changedTouches[0].clientY}); isDragging=false; });
+
+document.getElementById('next-btn').addEventListener('click', () => {
+  if(roundDone) {
+    const s = recordRound(totalScore);
+    document.getElementById('next-btn').classList.remove('show');
+    document.getElementById('result-bar').classList.remove('show');
+    document.getElementById('lm-card').style.display = 'none';
+    document.getElementById('diff-bar').style.display = 'none';
+    document.getElementById('legend').classList.remove('show');
+    document.getElementById('final-score-big').textContent = totalScore.toLocaleString();
+    const pct = totalScore/25000;
+    document.getElementById('final-grade').textContent = (pct>=0.9?'🌍 World-class explorer!':pct>=0.7?'✈️ Well-travelled!':pct>=0.5?'🗺️ Getting there!':'📍 Keep exploring!') + ' · ' + Math.round(pct*100) + '% of max';
+    document.getElementById('final-streak').textContent = s.count;
+    document.getElementById('best-streak').textContent = s.best;
+    document.getElementById('final-screen').classList.add('show');
+    updateStreakBadge();
+  } else {
+    currentIdx++;
+    document.getElementById('dot-'+currentIdx).className = 'pdot active';
+    showLandmark();
+  }
+});
+
+document.getElementById('play-again').addEventListener('click', () => {
+  document.getElementById('lm-card').style.display = '';
+  document.getElementById('diff-bar').style.display = '';
+  clearMarkers(); startRound();
+});
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    difficulty = btn.dataset.diff;
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    clearMarkers(); startRound();
+  });
+});
+
+document.getElementById('share-btn').addEventListener('click', () => {
+  const diffLabel = {easy:'🟢',medium:'🟡',hard:'🔴'}[difficulty];
+  const lines = roundResults.map((r,i) => `${i+1}. ${r.name} — ${r.dist.toLocaleString()}km (+${r.pts.toLocaleString()}pts)`);
+  const text = `🌍 LandmarkTap ${diffLabel}\nScore: ${totalScore.toLocaleString()} / 25,000\n\n${lines.join('\n')}\n\nPlay at: [your URL here]`;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('share-btn');
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy score to share', 2000);
+  });
+});
+
+// --- Boot ---
+initGlobe();
+updateStreakBadge();
+startRound();
+</script>
+</body>
+</html>
